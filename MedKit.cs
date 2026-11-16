@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotReturns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.5";
+    public override string ModuleVersion => "0.9.6";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -149,15 +149,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             !string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
             return;
 
-        // Remove the healthshot before the game can run its native self-heal.
-        // It is restored below unless a valid teammate is successfully healed.
-        player.RemoveItemByDesignerName(HealthshotName);
-
-        // Always remove the actual active entity as well. RemoveItemByDesignerName
-        // can update the inventory before the entity is fully removed; leaving it
-        // alive lets the native healthshot handler retain it while we issue a return.
-        if (activeWeapon.IsValid)
-            activeWeapon.Remove();
+        // Remove the active entity immediately. Do not also call
+        // RemoveItemByDesignerName here: that helper schedules a second delayed
+        // Kill for the same weapon, which can race with native healthshot handling.
+        activeWeapon.Remove();
 
         // During cooldown, consume the click without allowing the game's native self-heal.
         if (_healCooldowns.TryGetValue(player.SteamID, out var cooldownUntil))
@@ -327,6 +322,58 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         return true;
     }
 
+    private void EnsureExactlyOneHealthshot(CCSPlayerController player, CCSPlayerPawn pawn)
+    {
+        if (!player.IsValid || !pawn.IsValid)
+            return;
+
+        var healthshots = new List<CBasePlayerWeapon>();
+        var seenHandles = new HashSet<nint>();
+
+        var weapons = pawn.WeaponServices?.MyWeapons;
+        if (weapons != null)
+        {
+            foreach (var weaponHandle in weapons)
+            {
+                var weapon = weaponHandle?.Value;
+                if (weapon == null || !weapon.IsValid ||
+                    !string.Equals(weapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (seenHandles.Add(weapon.EntityHandle.Raw))
+                    healthshots.Add(weapon);
+            }
+        }
+
+        var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
+        if (activeWeapon != null && activeWeapon.IsValid &&
+            string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase) &&
+            seenHandles.Add(activeWeapon.EntityHandle.Raw))
+        {
+            healthshots.Add(activeWeapon);
+        }
+
+        // Keep one valid healthshot and remove every extra entity.
+        for (var i = 1; i < healthshots.Count; i++)
+        {
+            if (healthshots[i].IsValid)
+                healthshots[i].Remove();
+        }
+
+        if (healthshots.Count == 0)
+        {
+            var item = player.GiveNamedItem(HealthshotName);
+            if (item == nint.Zero)
+                SendMessage(player, Settings.ReturnFailedMessage);
+        }
+
+        if (healthshots.Count > 1)
+        {
+            Logger.LogWarning("MedKit: removed {Count} duplicate healthshots from {Player}.",
+                healthshots.Count - 1, player.PlayerName);
+        }
+    }
+
     private void ReturnHealthshot(CCSPlayerController player)
     {
         if (!player.IsValid || !player.PawnIsAlive)
@@ -358,14 +405,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                 currentPawn.EntityHandle.Raw != originalPawnHandle)
                 return;
 
-            // The game may already have restored/kept the healthshot.
-            // Never give another one if one is present in the inventory.
-            if (HasHealthshot(currentPawn))
-                return;
-
-            var item = player.GiveNamedItem(HealthshotName);
-            if (item == nint.Zero)
-                SendMessage(player, Settings.ReturnFailedMessage);
+            // Reconcile the inventory to exactly one healthshot. A boolean
+            // HasHealthshot check is insufficient: the native use path can leave
+            // an extra entity behind, and the old code would preserve that duplicate.
+            EnsureExactlyOneHealthshot(player, currentPawn);
         });
     }
     private void PrintSelfUseHint(CCSPlayerController player)
