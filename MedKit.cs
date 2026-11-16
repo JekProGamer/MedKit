@@ -203,12 +203,12 @@ public sealed class MedKitPlugin : BasePlugin
                 return;
             }
 
+            particle.ControlPointEnts[0] = new CHandle<CBaseEntity>(targetPawn.EntityHandle.Raw);
             particle.Teleport(
                 new Vector(origin.X, origin.Y, origin.Z + Settings.ParticleHeightOffset),
                 null,
                 null);
             particle.DispatchSpawn();
-            particle.ControlPointEnts[0] = new CHandle<CBaseEntity>(targetPawn.EntityHandle.Raw);
 
             var duration = Math.Clamp(Settings.ParticleDurationSeconds, 0.1f, 30.0f);
             var fadeOut = Math.Clamp(Settings.ParticleFadeOutSeconds, 0.1f, 10.0f);
