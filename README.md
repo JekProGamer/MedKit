@@ -2,20 +2,20 @@
 
 CounterStrikeSharp plugin for CS2 Deathmatch.
 
-## Current draft: 0.1.0
+## Current draft: 0.2.0
 
-Implemented:
+Implemented in source:
 - `!medkit` test command (registered as `css_medkit`).
 - Restricted to admins with the `@css/root` permission.
-- Gives the admin a `weapon_healthshot`.
-- Prints the colored Russian instruction message.
+- Gives the admin a standard `weapon_healthshot`.
+- Listens for the primary-attack button while the healthshot is active.
+- Removes the healthshot before native use is allowed to proceed, preventing the owner's standard self-heal.
+- Traces the player's aim and heals a living same-team player hit by the trace to 100 HP.
+- Prints the colored Russian instruction and healing feedback.
 
-Not implemented yet:
-- Aiming at a teammate and using the healthshot to heal them.
-- Blocking the native self-heal.
-- Restoring teammate health up to 100 HP.
+## Validation status
 
-The current commit is a scaffold for the admin test command, not the completed teammate-healing mechanic. The latter requires hooking/intercepting the healthshot use behavior and must be tested on the target CounterStrikeSharp/CS2 server build.
+The source implementation has been added, but it has **not yet been compiled or tested on a live CS2 server**. In particular, verify that the button-change listener runs early enough on the server build to remove the healthshot before the native weapon action. If the game processes the healthshot first, a lower-level pre-hook will be required.
 
 ## Requirements
 
