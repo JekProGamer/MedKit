@@ -181,6 +181,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (!trace.DidHit())
         {
             PrintSelfUseHint(player);
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
@@ -188,6 +189,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (hitEntity == null || !hitEntity.IsValid)
         {
             PrintSelfUseHint(player);
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
@@ -199,12 +201,14 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         catch
         {
             PrintSelfUseHint(player);
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
         if (targetPawn == null || !targetPawn.IsValid)
         {
             PrintSelfUseHint(player);
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
@@ -213,6 +217,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             target.Slot == player.Slot || target.Team != player.Team)
         {
             PrintSelfUseHint(player);
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
