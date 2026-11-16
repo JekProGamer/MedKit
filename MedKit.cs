@@ -24,10 +24,9 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
     private readonly Dictionary<ulong, (int Count, DateTime CooldownUntil)> _hintMessageLimits = new();
-    private readonly Dictionary<ulong, CBasePlayerWeapon> _blockedHealthshots = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.8";
+    public override string ModuleVersion => "0.9.9";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -140,17 +139,6 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (!player.IsValid)
             return;
 
-        // Unlock the healthshot only after primary attack is released.
-        // This prevents holding the button from triggering native self-healing.
-        if ((released & PlayerButtons.Attack) != 0 && _blockedHealthshots.Remove(player.SteamID, out var blockedWeapon))
-        {
-            if (blockedWeapon != null && blockedWeapon.IsValid)
-            {
-                blockedWeapon.NextPrimaryAttackTick = Server.TickCount;
-                blockedWeapon.NextPrimaryAttackTickRatio = 0.0f;
-            }
-        }
-
         if (!player.PawnIsAlive || (pressed & PlayerButtons.Attack) == 0)
             return;
 
@@ -163,18 +151,18 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             !string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
             return;
 
-        // Lock the weapon attack tick before native weapon processing. The lock
-        // remains until Attack is released, so holding the button cannot invoke
-        // the game's built-in self-heal. The item itself is not removed/recreated.
-        activeWeapon.NextPrimaryAttackTick = int.MaxValue;
-        activeWeapon.NextPrimaryAttackTickRatio = 0.0f;
-        _blockedHealthshots[player.SteamID] = activeWeapon;
-        SuppressPrimaryAttack(pawn);
+        // Remove the native healthshot immediately so its built-in self-heal
+        // cannot be executed by the weapon after this input callback. For an
+        // invalid target the item is restored once, after the current frame.
+        activeWeapon.Remove();
 
         if (_healCooldowns.TryGetValue(player.SteamID, out var cooldownUntil))
         {
             if (DateTime.UtcNow < cooldownUntil)
+            {
+                RestoreHealthshotAfterBlockedUse(player);
                 return;
+            }
 
             _healCooldowns.Remove(player.SteamID);
             _healAttempts.Remove(player.SteamID);
@@ -184,6 +172,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (start == null)
         {
             PrintSelfUseHint(player);
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
@@ -230,6 +219,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (RegisterHealAttempt(player))
         {
             SendMessage(player, Settings.AntiSpamMessage, ("COOLDOWN", Settings.AntiSpamCooldownSeconds));
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
@@ -237,14 +227,11 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (oldHealth >= HealTargetHealth)
         {
             SendMessage(player, Settings.AlreadyFullHealthMessage);
+            RestoreHealthshotAfterBlockedUse(player);
             return;
         }
 
-        // Consume exactly the active healthshot only after a valid heal is confirmed.
-        _blockedHealthshots.Remove(player.SteamID);
-        if (activeWeapon.IsValid)
-            activeWeapon.Remove();
-
+        // The native healthshot was already removed; successful healing consumes it.
         var restoredHealth = HealTargetHealth - oldHealth;
         targetPawn.Health = HealTargetHealth;
         Utilities.SetStateChanged(targetPawn, "CBaseEntity", "m_iHealth");
@@ -333,17 +320,19 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         return true;
     }
 
-    private static void SuppressPrimaryAttack(CCSPlayerPawn pawn)
+    private void RestoreHealthshotAfterBlockedUse(CCSPlayerController player)
     {
-        var movementServices = pawn.MovementServices;
-        if (movementServices == null)
-            return;
+        AddTimer(0.1f, () =>
+        {
+            if (!player.IsValid || !player.PawnIsAlive)
+                return;
 
-        var buttonStates = movementServices.Buttons.ButtonStates;
-        if (buttonStates.Length > 0)
-            buttonStates[0] &= ~(ulong)PlayerButtons.Attack;
+            var pawn = player.PlayerPawn.Value;
+            if (pawn == null || !pawn.IsValid || HasHealthshot(pawn))
+                return;
 
-        movementServices.QueuedButtonDownMask &= ~(ulong)PlayerButtons.Attack;
+            player.GiveNamedItem(HealthshotName);
+        });
     }
 
     private void PrintSelfUseHint(CCSPlayerController player)
