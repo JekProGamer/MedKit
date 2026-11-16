@@ -24,10 +24,9 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
     private readonly Dictionary<ulong, (int Count, DateTime CooldownUntil)> _hintMessageLimits = new();
-    private readonly HashSet<ulong> _pendingHealthshotReturns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.6";
+    public override string ModuleVersion => "0.9.7";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -149,19 +148,15 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             !string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
             return;
 
-        // Remove the active entity immediately. Do not also call
-        // RemoveItemByDesignerName here: that helper schedules a second delayed
-        // Kill for the same weapon, which can race with native healthshot handling.
-        activeWeapon.Remove();
+        // Cancel the primary attack in the server-side input state. Do not
+        // delete/recreate the item for invalid uses: the original healthshot
+        // remains in inventory and therefore cannot accumulate duplicates.
+        SuppressPrimaryAttack(pawn);
 
-        // During cooldown, consume the click without allowing the game's native self-heal.
         if (_healCooldowns.TryGetValue(player.SteamID, out var cooldownUntil))
         {
             if (DateTime.UtcNow < cooldownUntil)
-            {
-                ReturnHealthshot(player);
                 return;
-            }
 
             _healCooldowns.Remove(player.SteamID);
             _healAttempts.Remove(player.SteamID);
@@ -170,7 +165,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         var start = pawn.AbsOrigin;
         if (start == null)
         {
-            ReturnHealthshot(player);
+            PrintSelfUseHint(player);
             return;
         }
 
@@ -178,7 +173,6 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         var trace = Trace.TraceShape(eyePosition, pawn.EyeAngles, pawn);
         if (!trace.DidHit())
         {
-            ReturnHealthshot(player);
             PrintSelfUseHint(player);
             return;
         }
@@ -186,7 +180,6 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         var hitEntity = trace.HitEntity();
         if (hitEntity == null || !hitEntity.IsValid)
         {
-            ReturnHealthshot(player);
             PrintSelfUseHint(player);
             return;
         }
@@ -198,14 +191,12 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         }
         catch
         {
-            ReturnHealthshot(player);
             PrintSelfUseHint(player);
             return;
         }
 
         if (targetPawn == null || !targetPawn.IsValid)
         {
-            ReturnHealthshot(player);
             PrintSelfUseHint(player);
             return;
         }
@@ -214,14 +205,12 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (target == null || !target.IsValid || !target.PawnIsAlive ||
             target.Slot == player.Slot || target.Team != player.Team)
         {
-            ReturnHealthshot(player);
             PrintSelfUseHint(player);
             return;
         }
 
         if (RegisterHealAttempt(player))
         {
-            ReturnHealthshot(player);
             SendMessage(player, Settings.AntiSpamMessage, ("COOLDOWN", Settings.AntiSpamCooldownSeconds));
             return;
         }
@@ -229,10 +218,13 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         var oldHealth = targetPawn.Health;
         if (oldHealth >= HealTargetHealth)
         {
-            ReturnHealthshot(player);
             SendMessage(player, Settings.AlreadyFullHealthMessage);
             return;
         }
+
+        // Consume exactly the active healthshot only after a valid heal is confirmed.
+        if (activeWeapon.IsValid)
+            activeWeapon.Remove();
 
         var restoredHealth = HealTargetHealth - oldHealth;
         targetPawn.Health = HealTargetHealth;
@@ -322,95 +314,19 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         return true;
     }
 
-    private void EnsureExactlyOneHealthshot(CCSPlayerController player, CCSPlayerPawn pawn)
+    private static void SuppressPrimaryAttack(CCSPlayerPawn pawn)
     {
-        if (!player.IsValid || !pawn.IsValid)
+        var movementServices = pawn.MovementServices;
+        if (movementServices == null)
             return;
 
-        var healthshots = new List<CBasePlayerWeapon>();
-        var seenHandles = new HashSet<uint>();
+        var buttonStates = movementServices.Buttons.ButtonStates;
+        if (buttonStates.Length > 0)
+            buttonStates[0] &= ~(ulong)PlayerButtons.Attack;
 
-        var weapons = pawn.WeaponServices?.MyWeapons;
-        if (weapons != null)
-        {
-            foreach (var weaponHandle in weapons)
-            {
-                var weapon = weaponHandle?.Value;
-                if (weapon == null || !weapon.IsValid ||
-                    !string.Equals(weapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                if (seenHandles.Add(weapon.EntityHandle.Raw))
-                    healthshots.Add(weapon);
-            }
-        }
-
-        var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
-        if (activeWeapon != null && activeWeapon.IsValid &&
-            string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase) &&
-            seenHandles.Add(activeWeapon.EntityHandle.Raw))
-        {
-            healthshots.Add(activeWeapon);
-        }
-
-        // Keep one valid healthshot and remove every extra entity.
-        for (var i = 1; i < healthshots.Count; i++)
-        {
-            if (healthshots[i].IsValid)
-                healthshots[i].Remove();
-        }
-
-        if (healthshots.Count == 0)
-        {
-            var item = player.GiveNamedItem(HealthshotName);
-            if (item == nint.Zero)
-                SendMessage(player, Settings.ReturnFailedMessage);
-        }
-
-        if (healthshots.Count > 1)
-        {
-            Logger.LogWarning("MedKit: removed {Count} duplicate healthshots from {Player}.",
-                healthshots.Count - 1, player.PlayerName);
-        }
+        movementServices.QueuedButtonDownMask &= ~(ulong)PlayerButtons.Attack;
     }
 
-    private void ReturnHealthshot(CCSPlayerController player)
-    {
-        if (!player.IsValid || !player.PawnIsAlive)
-            return;
-
-        var originalPawn = player.PlayerPawn.Value;
-        if (originalPawn == null || !originalPawn.IsValid)
-            return;
-
-        var steamId = player.SteamID;
-
-        // Several input callbacks can request a return before the timer fires.
-        // Keep only one pending return per player.
-        if (!_pendingHealthshotReturns.Add(steamId))
-            return;
-
-        var originalPawnHandle = originalPawn.EntityHandle.Raw;
-
-        // Wait until native healthshot-use handling and inventory updates have finished.
-        AddTimer(2.5f, () =>
-        {
-            _pendingHealthshotReturns.Remove(steamId);
-
-            if (!player.IsValid || !player.PawnIsAlive)
-                return;
-
-            var currentPawn = player.PlayerPawn.Value;
-            if (currentPawn == null || !currentPawn.IsValid ||
-                currentPawn.EntityHandle.Raw != originalPawnHandle)
-                return;
-
-            // Reconcile the inventory to exactly one healthshot. A boolean
-            // HasHealthshot check is insufficient: the native use path can leave
-            // an extra entity behind, and the old code would preserve that duplicate.
-            EnsureExactlyOneHealthshot(player, currentPawn);
-        });
-    }
     private void PrintSelfUseHint(CCSPlayerController player)
     {
         SendLimitedHint(player, Settings.SelfUseMessage);
