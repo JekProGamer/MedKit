@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.10";
+    public override string ModuleVersion => "0.9.11";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -52,7 +52,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     {
         var player = gameEvent.Userid;
         if (player != null && player.IsValid && IsHealthshotItem(gameEvent.Item))
+        {
             PrintMedKitHint(player);
+            ScheduleHealthshotLimit(player);
+        }
 
         return HookResult.Continue;
     }
@@ -72,31 +75,49 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                item.Contains("healthshot", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool HasHealthshot(CCSPlayerPawn pawn)
+    private static List<CBasePlayerWeapon> GetHealthshots(CCSPlayerPawn pawn)
     {
+        var healthshots = new List<CBasePlayerWeapon>();
         if (!pawn.IsValid)
-            return false;
+            return healthshots;
 
-        // Check the active weapon separately as the inventory handle list can
-        // briefly lag behind weapon switching/removal on the server.
         var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
         if (activeWeapon != null && activeWeapon.IsValid &&
             string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
-            return true;
+            healthshots.Add(activeWeapon);
 
         var weapons = pawn.WeaponServices?.MyWeapons;
         if (weapons == null)
-            return false;
+            return healthshots;
 
         foreach (var weaponHandle in weapons)
         {
             var weapon = weaponHandle?.Value;
-            if (weapon != null && weapon.IsValid &&
-                string.Equals(weapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
-                return true;
+            if (weapon == null || !weapon.IsValid ||
+                !string.Equals(weapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            // The active weapon is also normally present in MyWeapons.
+            if (activeWeapon != null && activeWeapon.IsValid &&
+                weapon.EntityHandle.Raw == activeWeapon.EntityHandle.Raw)
+                continue;
+
+            healthshots.Add(weapon);
         }
 
-        return false;
+        return healthshots;
+    }
+
+    private static bool HasHealthshot(CCSPlayerPawn pawn) => GetHealthshots(pawn).Count > 0;
+
+    private static void EnforceOneHealthshot(CCSPlayerPawn pawn)
+    {
+        var healthshots = GetHealthshots(pawn);
+        for (var i = 1; i < healthshots.Count; i++)
+        {
+            if (healthshots[i].IsValid)
+                healthshots[i].Remove();
+        }
     }
 
     private void OnMedKitCommand(CCSPlayerController? player)
@@ -334,48 +355,55 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (!_pendingHealthshotRestoreChecks.Add(steamId))
             return;
 
-        // First check after 2 seconds. If the game has already restored the
-        // healthshot, do nothing. Otherwise, wait another 3 seconds before
-        // giving exactly one replacement.
-        AddTimer(2.0f, () =>
+        // Restore after 0.1 seconds, then keep the inventory capped at one
+        // while delayed game-side item grants finish processing.
+        AddTimer(0.1f, () =>
+        {
+            try
+            {
+                if (!player.IsValid || !player.PawnIsAlive)
+                    return;
+
+                var pawn = player.PlayerPawn.Value;
+                if (pawn == null || !pawn.IsValid)
+                    return;
+
+                var healthshots = GetHealthshots(pawn);
+                if (healthshots.Count == 0)
+                    player.GiveNamedItem(HealthshotName);
+                else
+                    EnforceOneHealthshot(pawn);
+
+                foreach (var delay in new[] { 0.25f, 0.75f, 1.5f, 3.0f, 5.0f })
+                {
+                    AddTimer(delay, () =>
+                    {
+                        if (!player.IsValid || !player.PawnIsAlive)
+                            return;
+
+                        var currentPawn = player.PlayerPawn.Value;
+                        if (currentPawn != null && currentPawn.IsValid)
+                            EnforceOneHealthshot(currentPawn);
+                    });
+                }
+            }
+            finally
+            {
+                AddTimer(5.1f, () => _pendingHealthshotRestoreChecks.Remove(steamId));
+            }
+        });
+    }
+
+    private void ScheduleHealthshotLimit(CCSPlayerController player)
+    {
+        AddTimer(0.1f, () =>
         {
             if (!player.IsValid || !player.PawnIsAlive)
-            {
-                _pendingHealthshotRestoreChecks.Remove(steamId);
                 return;
-            }
 
             var pawn = player.PlayerPawn.Value;
-            if (pawn == null || !pawn.IsValid)
-            {
-                _pendingHealthshotRestoreChecks.Remove(steamId);
-                return;
-            }
-
-            if (HasHealthshot(pawn))
-            {
-                _pendingHealthshotRestoreChecks.Remove(steamId);
-                return;
-            }
-
-            AddTimer(3.0f, () =>
-            {
-                try
-                {
-                    if (!player.IsValid || !player.PawnIsAlive)
-                        return;
-
-                    var currentPawn = player.PlayerPawn.Value;
-                    if (currentPawn == null || !currentPawn.IsValid || HasHealthshot(currentPawn))
-                        return;
-
-                    player.GiveNamedItem(HealthshotName);
-                }
-                finally
-                {
-                    _pendingHealthshotRestoreChecks.Remove(steamId);
-                }
-            });
+            if (pawn != null && pawn.IsValid)
+                EnforceOneHealthshot(pawn);
         });
     }
 
