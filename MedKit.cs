@@ -148,7 +148,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             return;
         }
 
-        var target = targetPawn.Controller.Value;
+        var target = targetPawn.Controller.Value?.As<CCSPlayerController>();
         if (target == null || !target.IsValid || !target.PawnIsAlive ||
             target.Slot == player.Slot || target.Team != player.Team)
         {
