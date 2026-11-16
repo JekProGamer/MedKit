@@ -156,7 +156,7 @@ public sealed class MedKitPlugin : BasePlugin
     private static void PrintSelfUseHint(CCSPlayerController player)
     {
         player.PrintToChat(
-            $"{ChatColors.Red}[MedKit] {ChatColors.White}Нельзя использовать шприц на себе, лечи тиммейта.");
+            $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] {ChatColors.Red}Нельзя {ChatColors.White}использовать шприц на себе, лечи {ChatColors.Green}тиммейта{ChatColors.White}.");
     }
 
     private static void PrintMedKitHint(CCSPlayerController player)
