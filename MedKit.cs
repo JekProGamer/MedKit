@@ -26,7 +26,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly Dictionary<ulong, (int Count, DateTime CooldownUntil)> _hintMessageLimits = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.0";
+    public override string ModuleVersion => "0.9.1";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -307,10 +307,15 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void PrintSelfUseHint(CCSPlayerController player)
     {
-        SendMessage(player, Settings.SelfUseMessage);
+        SendLimitedHint(player, Settings.SelfUseMessage);
     }
 
     private void PrintMedKitHint(CCSPlayerController player)
+    {
+        SendLimitedHint(player, Settings.MedKitHintMessage);
+    }
+
+    private void SendLimitedHint(CCSPlayerController player, string message)
     {
         if (!player.IsValid)
             return;
@@ -319,21 +324,17 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         var cooldown = TimeSpan.FromSeconds(7);
         var steamId = player.SteamID;
         var now = DateTime.UtcNow;
+        var state = _hintMessageLimits.TryGetValue(steamId, out var existing)
+            ? existing
+            : (Count: 0, CooldownUntil: DateTime.MinValue);
 
-        if (_hintMessageLimits.TryGetValue(steamId, out var state))
-        {
-            if (state.CooldownUntil > now)
-                return;
+        if (state.CooldownUntil > now)
+            return;
 
-            if (state.CooldownUntil != DateTime.MinValue)
-                state = (0, DateTime.MinValue);
-        }
-        else
-        {
+        if (state.CooldownUntil != DateTime.MinValue)
             state = (0, DateTime.MinValue);
-        }
 
-        SendMessage(player, Settings.MedKitHintMessage);
+        SendMessage(player, message);
         state.Count++;
         if (state.Count >= maxHintMessages)
             state.CooldownUntil = now + cooldown;
