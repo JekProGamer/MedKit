@@ -6,13 +6,18 @@ using System.Drawing;
 
 namespace MedKit;
 
-public sealed class MedKitPlugin : BasePlugin
+public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 {
+    public MedKitConfig Config { get; set; } = null!;
+
+    public void OnConfigParsed(MedKitConfig config)
+    {
+        Config = config;
+    }
     private const string HealthshotName = "weapon_healthshot";
     private const int HealTargetHealth = 100;
     private const float AimStartHeight = 64.0f;
-    public override BasePluginConfig Config { get; set; } = new MedKitConfig();
-    private MedKitConfig Settings => (MedKitConfig)Config;
+    private MedKitConfig Settings => Config;
 
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
