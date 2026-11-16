@@ -64,7 +64,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     {
         var player = gameEvent.Userid;
         if (player != null && player.IsValid && IsHealthshotItem(gameEvent.Item))
+        {
             PrintMedKitHint(player);
+            ScheduleHealthshotLimit(player);
+        }
 
         return HookResult.Continue;
     }
