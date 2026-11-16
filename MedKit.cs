@@ -10,14 +10,14 @@ public sealed class MedKitPlugin : BasePlugin
     private const string HealthshotName = "weapon_healthshot";
     private const int HealTargetHealth = 100;
     private const float AimStartHeight = 64.0f;
-    private static readonly TimeSpan AntiSpamWindow = TimeSpan.FromSeconds(3);
-    private static readonly TimeSpan AntiSpamCooldown = TimeSpan.FromSeconds(10);
+    public override BasePluginConfig Config { get; set; } = new MedKitConfig();
+    private MedKitConfig Settings => (MedKitConfig)Config;
 
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.5.0";
+    public override string ModuleVersion => "0.6.0";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -36,20 +36,20 @@ public sealed class MedKitPlugin : BasePlugin
 
         if (!AdminManager.PlayerHasPermissions(player, "@css/root"))
         {
-            player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}У тебя нет доступа к этой команде.");
+            SendMessage(player, Settings.NoPermissionMessage);
             return;
         }
 
         if (!player.PawnIsAlive)
         {
-            player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}Использовать команду можно только после возрождения.");
+            SendMessage(player, Settings.AliveOnlyMessage);
             return;
         }
 
         var item = player.GiveNamedItem(HealthshotName);
         if (item == nint.Zero)
         {
-            player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}Не удалось выдать аптечку.");
+            SendMessage(player, Settings.GiveFailedMessage);
             return;
         }
 
@@ -148,8 +148,7 @@ public sealed class MedKitPlugin : BasePlugin
         {
             ReturnHealthshot(player);
             player.PrintToChat(
-                $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] " +
-                $"{ChatColors.Red}Антиспам! {ChatColors.White}Лечение заблокировано на {ChatColors.Yellow}10 секунд{ChatColors.White}.");
+                SendMessage(player, Settings.AntiSpamMessage, ("COOLDOWN", Settings.AntiSpamCooldownSeconds));
             return;
         }
 
@@ -157,7 +156,7 @@ public sealed class MedKitPlugin : BasePlugin
         if (oldHealth >= HealTargetHealth)
         {
             ReturnHealthshot(player);
-            player.PrintToChat($"{ChatColors.Yellow}[MedKit] {ChatColors.White}У тиммейта уже {ChatColors.Green}100 HP{ChatColors.White}, лечить не нужно.");
+            SendMessage(player, Settings.AlreadyFullHealthMessage);
             return;
         }
 
@@ -165,14 +164,10 @@ public sealed class MedKitPlugin : BasePlugin
         targetPawn.Health = HealTargetHealth;
         Utilities.SetStateChanged(targetPawn, "CBaseEntity", "m_iHealth");
 
-        player.PrintToChat(
-            $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] " +
-            $"{ChatColors.White}Ты восстановил тиммейту {ChatColors.Yellow}{restoredHealth} HP " +
-            $"{ChatColors.Grey}({ChatColors.Yellow}{oldHealth}{ChatColors.Grey} -> {ChatColors.Green}100 HP{ChatColors.Grey}).");
-        target.PrintToChat(
-            $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] " +
-            $"{ChatColors.White}Тебе восстановили {ChatColors.Yellow}{restoredHealth} HP " +
-            $"{ChatColors.Grey}(теперь {ChatColors.Green}100 HP{ChatColors.Grey}).");
+        SendMessage(player, Settings.HealerSuccessMessage,
+            ("HEAL_AMOUNT", restoredHealth), ("OLD_HP", oldHealth), ("NEW_HP", HealTargetHealth));
+        SendMessage(target, Settings.TargetSuccessMessage,
+            ("HEAL_AMOUNT", restoredHealth), ("OLD_HP", oldHealth), ("NEW_HP", HealTargetHealth));
         Logger.LogInformation("MedKit: {Healer} healed {Target} from {OldHealth} to 100 HP.",
             player.PlayerName, target.PlayerName, oldHealth);
     }
@@ -189,14 +184,14 @@ public sealed class MedKitPlugin : BasePlugin
             _healAttempts[steamId] = attempts;
         }
 
-        attempts.RemoveAll(time => now - time > AntiSpamWindow);
+        attempts.RemoveAll(time => now - time > TimeSpan.FromSeconds(Math.Max(1, Settings.AntiSpamWindowSeconds)));
         attempts.Add(now);
 
-        if (attempts.Count < 5)
+        if (attempts.Count < Math.Max(1, Settings.AntiSpamMaxAttempts))
             return false;
 
         _healAttempts.Remove(steamId);
-        _healCooldowns[steamId] = now + AntiSpamCooldown;
+        _healCooldowns[steamId] = now + TimeSpan.FromSeconds(Math.Max(1, Settings.AntiSpamCooldownSeconds));
         return true;
     }
 
@@ -206,21 +201,58 @@ public sealed class MedKitPlugin : BasePlugin
         var item = player.GiveNamedItem(HealthshotName);
         if (item == nint.Zero)
         {
-            player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}Не удалось вернуть шприц.");
+            SendMessage(player, Settings.ReturnFailedMessage);
         }
     }
 
-    private static void PrintSelfUseHint(CCSPlayerController player)
+    private void PrintSelfUseHint(CCSPlayerController player)
     {
-        player.PrintToChat(
-            $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] {ChatColors.Red}Нельзя {ChatColors.White}использовать шприц на себе, лечи {ChatColors.Green}тиммейта{ChatColors.White}.");
+        SendMessage(player, Settings.SelfUseMessage);
     }
 
-    private static void PrintMedKitHint(CCSPlayerController player)
+    private void PrintMedKitHint(CCSPlayerController player)
     {
-        player.PrintToChat(
-            $"{ChatColors.White}[{ChatColors.Purple}Med-kit {ChatColors.White}- " +
-            $"{ChatColors.Yellow}Friend {ChatColors.White}| {ChatColors.Grey}" +
-            $"Используй его на тиммейта, чтобы пополнить его {ChatColors.Green}HP 100{ChatColors.White}.");
+        SendMessage(player, Settings.MedKitHintMessage);
     }
+
+    private static void SendMessage(CCSPlayerController player, string template, params (string Key, object Value)[] values)
+    {
+        var message = template;
+        foreach (var (key, value) in values)
+            message = message.Replace("{" + key + "}", value.ToString() ?? string.Empty);
+
+        message = message
+            .Replace("{WHITE}", ChatColors.White)
+            .Replace("{RED}", ChatColors.Red)
+            .Replace("{GREEN}", ChatColors.Green)
+            .Replace("{YELLOW}", ChatColors.Yellow)
+            .Replace("{PURPLE}", ChatColors.Purple)
+            .Replace("{GREY}", ChatColors.Grey);
+
+        player.PrintToChat(message);
+    }
+
+}
+
+
+public sealed class MedKitConfig : BasePluginConfig
+{
+    public override int Version { get; set; } = 1;
+
+    public int AntiSpamMaxAttempts { get; set; } = 5;
+    public int AntiSpamWindowSeconds { get; set; } = 3;
+    public int AntiSpamCooldownSeconds { get; set; } = 10;
+
+    // Color tags: {WHITE}, {RED}, {GREEN}, {YELLOW}, {PURPLE}, {GREY}.
+    // Placeholders: {HEAL_AMOUNT}, {OLD_HP}, {NEW_HP}, {COOLDOWN}.
+    public string NoPermissionMessage { get; set; } = "{RED}[MedKit] {WHITE}У тебя нет доступа к этой команде.";
+    public string AliveOnlyMessage { get; set; } = "{RED}[MedKit] {WHITE}Использовать команду можно только после возрождения.";
+    public string GiveFailedMessage { get; set; } = "{RED}[MedKit] {WHITE}Не удалось выдать аптечку.";
+    public string ReturnFailedMessage { get; set; } = "{RED}[MedKit] {WHITE}Не удалось вернуть шприц.";
+    public string SelfUseMessage { get; set; } = "{WHITE}[{PURPLE}MedKit{WHITE}] {RED}Нельзя {WHITE}использовать шприц на себе, лечи {GREEN}тиммейта{WHITE}.";
+    public string MedKitHintMessage { get; set; } = "{WHITE}[{PURPLE}Med-kit {WHITE}- {YELLOW}Friend {WHITE}| {GREY}Используй его на тиммейта, чтобы пополнить его {GREEN}HP 100{WHITE}.";
+    public string AlreadyFullHealthMessage { get; set; } = "{YELLOW}[MedKit] {WHITE}У тиммейта уже {GREEN}100 HP{WHITE}, лечить не нужно.";
+    public string AntiSpamMessage { get; set; } = "{WHITE}[{PURPLE}MedKit{WHITE}] {RED}Антиспам! {WHITE}Лечение заблокировано на {YELLOW}{COOLDOWN} секунд{WHITE}.";
+    public string HealerSuccessMessage { get; set; } = "{WHITE}[{PURPLE}MedKit{WHITE}] {WHITE}Ты восстановил тиммейту {YELLOW}{HEAL_AMOUNT} HP {GREY}({YELLOW}{OLD_HP}{GREY} -> {GREEN}{NEW_HP} HP{GREY}).";
+    public string TargetSuccessMessage { get; set; } = "{WHITE}[{PURPLE}MedKit{WHITE}] {WHITE}Тебе восстановили {YELLOW}{HEAL_AMOUNT} HP {GREY}(теперь {GREEN}{NEW_HP} HP{GREY}).";
 }
