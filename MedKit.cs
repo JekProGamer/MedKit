@@ -72,6 +72,26 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                item.Contains("healthshot", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static bool HasHealthshot(CCSPlayerPawn pawn)
+    {
+        if (!pawn.IsValid)
+            return false;
+
+        var weapons = pawn.WeaponServices?.MyWeapons;
+        if (weapons == null)
+            return false;
+
+        foreach (var weaponHandle in weapons)
+        {
+            var weapon = weaponHandle?.Value;
+            if (weapon != null && weapon.IsValid &&
+                string.Equals(weapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
     private void OnMedKitCommand(CCSPlayerController? player)
     {
         if (player == null || !player.IsValid)
@@ -88,6 +108,13 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             SendMessage(player, Settings.AliveOnlyMessage);
             return;
         }
+
+        var pawn = player.PlayerPawn.Value;
+        if (pawn == null || !pawn.IsValid)
+            return;
+
+        if (HasHealthshot(pawn))
+            return;
 
         var item = player.GiveNamedItem(HealthshotName);
         if (item == nint.Zero)
@@ -323,12 +350,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
             // The game may already have restored/kept the healthshot.
             // Never give another one if one is present in the inventory.
-            var hasHealthshot = currentPawn.WeaponServices?.MyWeapons.Any(weapon =>
-                weapon != null && weapon.IsValid &&
-                weapon.Value != null && weapon.Value.IsValid &&
-                string.Equals(weapon.Value.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase)) == true;
-
-            if (hasHealthshot)
+            if (HasHealthshot(currentPawn))
                 return;
 
             var item = player.GiveNamedItem(HealthshotName);
