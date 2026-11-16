@@ -12,7 +12,7 @@ public sealed class MedKitPlugin : BasePlugin
     private const float AimStartHeight = 64.0f;
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.3.0";
+    public override string ModuleVersion => "0.4.0";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -130,15 +130,16 @@ public sealed class MedKitPlugin : BasePlugin
         if (oldHealth >= HealTargetHealth)
         {
             ReturnHealthshot(player);
-            player.PrintToChat($"{ChatColors.Yellow}[MedKit] {ChatColors.White}У тиммейта уже полное здоровье.");
+            player.PrintToChat($"{ChatColors.Yellow}[MedKit] {ChatColors.White}У тиммейта уже {ChatColors.Green}100 HP{ChatColors.White}, лечить не нужно.");
             return;
         }
 
+        var restoredHealth = HealTargetHealth - oldHealth;
         targetPawn.Health = HealTargetHealth;
         Utilities.SetStateChanged(targetPawn, "CBaseEntity", "m_iHealth");
 
-        player.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Ты вылечил тиммейта: {ChatColors.Green}{oldHealth} {ChatColors.White}-> {ChatColors.Green}100 HP");
-        target.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Тебя вылечил тиммейт до {ChatColors.Green}100 HP{ChatColors.White}.");
+        player.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Ты восстановил тиммейту {ChatColors.Green}{restoredHealth} HP {ChatColors.White}({oldHealth} -> {ChatColors.Green}100 HP{ChatColors.White}).");
+        target.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Тебе восстановили {ChatColors.Green}{restoredHealth} HP {ChatColors.White}(теперь {ChatColors.Green}100 HP{ChatColors.White}).");
         Logger.LogInformation("MedKit: {Healer} healed {Target} from {OldHealth} to 100 HP.",
             player.PlayerName, target.PlayerName, oldHealth);
     }
