@@ -11,7 +11,6 @@ public sealed class MedKitPlugin : BasePlugin
     private const string HealthshotName = "weapon_healthshot";
     private const int HealTargetHealth = 100;
     private const float AimStartHeight = 64.0f;
-    private const string DefaultParticleEffect = "particles/lightfountain/wonderinglights.vpcf";
     public override BasePluginConfig Config { get; set; } = new MedKitConfig();
     private MedKitConfig Settings => (MedKitConfig)Config;
 
@@ -209,7 +208,7 @@ public sealed class MedKitPlugin : BasePlugin
                 null,
                 null);
             particle.DispatchSpawn();
-            particle.SetParent(targetPawn);
+            particle.ControlPointEnts[0] = new CHandle<CBaseEntity>(targetPawn.EntityHandle.Raw);
 
             var duration = Math.Clamp(Settings.ParticleDurationSeconds, 0.1f, 30.0f);
             var fadeOut = Math.Clamp(Settings.ParticleFadeOutSeconds, 0.1f, 10.0f);
