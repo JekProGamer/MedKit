@@ -23,9 +23,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
+    private readonly Dictionary<ulong, (int Count, DateTime CooldownUntil)> _hintMessageLimits = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.8.0";
+    public override string ModuleVersion => "0.9.0";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -311,7 +312,33 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void PrintMedKitHint(CCSPlayerController player)
     {
+        if (!player.IsValid)
+            return;
+
+        const int maxHintMessages = 6;
+        var cooldown = TimeSpan.FromSeconds(7);
+        var steamId = player.SteamID;
+        var now = DateTime.UtcNow;
+
+        if (_hintMessageLimits.TryGetValue(steamId, out var state))
+        {
+            if (state.CooldownUntil > now)
+                return;
+
+            if (state.CooldownUntil != DateTime.MinValue)
+                state = (0, DateTime.MinValue);
+        }
+        else
+        {
+            state = (0, DateTime.MinValue);
+        }
+
         SendMessage(player, Settings.MedKitHintMessage);
+        state.Count++;
+        if (state.Count >= maxHintMessages)
+            state.CooldownUntil = now + cooldown;
+
+        _hintMessageLimits[steamId] = state;
     }
 
     private static void SendMessage(CCSPlayerController player, string template, params (string Key, object Value)[] values)
