@@ -2,7 +2,7 @@
 
 CounterStrikeSharp plugin for CS2 Deathmatch.
 
-## Current draft: 0.6.0
+## Current draft: 0.7.0
 
 Implemented in source:
 - `!medkit` test command (registered as `css_medkit`).
@@ -12,6 +12,7 @@ Implemented in source:
 - Removes the healthshot before native use is allowed to proceed, preventing the owner's standard self-heal.
 - Traces the player's aim and heals a living same-team player hit by the trace to 100 HP.
 - Prints the colored Russian instruction and healing feedback.
+- Spawns a green-tinted built-in CS2 particle effect on the healed teammate; the effect is attached to the player, stopped after a configurable duration, and then removed after its fade-out window.
 
 
 ## Configuration
@@ -26,6 +27,15 @@ Anti-spam settings (values are in seconds):
 - `AntiSpamMaxAttempts`: teammate-use attempts required to trigger the block (default: `5`).
 - `AntiSpamWindowSeconds`: time window for counting attempts (default: `3`).
 - `AntiSpamCooldownSeconds`: duration of the block (default: `10`).
+
+Particle settings:
+- `ParticleEnabled`: enable/disable the healing effect (default: `true`).
+- `ParticleEffect`: built-in particle resource path (default: `particles/lightfountain/wonderinglights.vpcf`).
+- `ParticleDurationSeconds`: how long the effect emits before it is told to stop (default: `2.5`).
+- `ParticleFadeOutSeconds`: cleanup delay after the stop/end-cap input (default: `1.5`).
+- `ParticleHeightOffset`: vertical offset from the teammate origin (default: `8`).
+
+The particle is tinted green by the plugin. The movement speed is defined inside the built-in particle asset and is not exposed as a generic CounterStrikeSharp setting; changing it would require a particle asset that supports a speed control.
 
 All player-facing chat messages are configurable in the same JSON file. Message templates support color tags `{WHITE}`, `{RED}`, `{GREEN}`, `{YELLOW}`, `{PURPLE}`, `{GREY}` and placeholders `{HEAL_AMOUNT}`, `{OLD_HP}`, `{NEW_HP}`, `{COOLDOWN}`.
 
