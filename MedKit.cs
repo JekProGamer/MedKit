@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.11";
+    public override string ModuleVersion => "0.9.12";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -371,11 +371,13 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                 if (pawn == null || !pawn.IsValid)
                     return;
 
-                var healthshots = GetHealthshots(pawn);
-                if (healthshots.Count == 0)
-                    player.GiveNamedItem(HealthshotName);
-                else
-                    EnforceOneHealthshot(pawn);
+                // The removed weapon can remain visible through a stale inventory handle
+                // for a short time. Always issue the replacement after 0.1 seconds;
+                // later checks remove any delayed duplicate and keep the cap at one.
+                var restoredItem = player.GiveNamedItem(HealthshotName);
+                if (restoredItem == nint.Zero)
+                    Logger.LogWarning("MedKit: failed to restore blocked healthshot for {Player} ({SteamId}).",
+                        player.PlayerName, steamId);
 
                 foreach (var delay in new[] { 0.25f, 0.75f, 1.5f, 3.0f, 5.0f })
                 {
