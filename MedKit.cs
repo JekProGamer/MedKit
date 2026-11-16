@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotReturns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.2";
+    public override string ModuleVersion => "0.9.3";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
