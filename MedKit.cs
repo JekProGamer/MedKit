@@ -147,8 +147,7 @@ public sealed class MedKitPlugin : BasePlugin
         if (RegisterHealAttempt(player))
         {
             ReturnHealthshot(player);
-            player.PrintToChat(
-                SendMessage(player, Settings.AntiSpamMessage, ("COOLDOWN", Settings.AntiSpamCooldownSeconds));
+            SendMessage(player, Settings.AntiSpamMessage, ("COOLDOWN", Settings.AntiSpamCooldownSeconds));
             return;
         }
 
