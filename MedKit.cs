@@ -2,6 +2,7 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Modules.Admin;
 using CounterStrikeSharp.API.Modules.Utils;
+using System.Drawing;
 
 namespace MedKit;
 
@@ -10,6 +11,7 @@ public sealed class MedKitPlugin : BasePlugin
     private const string HealthshotName = "weapon_healthshot";
     private const int HealTargetHealth = 100;
     private const float AimStartHeight = 64.0f;
+    private const string DefaultParticleEffect = "particles/lightfountain/wonderinglights.vpcf";
     public override BasePluginConfig Config { get; set; } = new MedKitConfig();
     private MedKitConfig Settings => (MedKitConfig)Config;
 
@@ -17,7 +19,7 @@ public sealed class MedKitPlugin : BasePlugin
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.6.0";
+    public override string ModuleVersion => "0.7.0";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -25,8 +27,15 @@ public sealed class MedKitPlugin : BasePlugin
     {
         AddCommand("css_medkit", "Give yourself a MedKit healthshot (admins only)", OnMedKitCommand);
         RegisterListener<Listeners.OnPlayerButtonsChanged>(OnPlayerButtonsChanged);
+        RegisterListener<Listeners.OnServerPrecacheResources>(OnServerPrecacheResources);
 
         Logger.LogInformation("MedKit loaded. Team-heal input listener registered. Admin test command: !medkit");
+    }
+
+    private void OnServerPrecacheResources(ResourceManifest manifest)
+    {
+        if (Settings.ParticleEnabled && !string.IsNullOrWhiteSpace(Settings.ParticleEffect))
+            manifest.AddResource(Settings.ParticleEffect);
     }
 
     private void OnMedKitCommand(CCSPlayerController? player, CommandInfo command)
@@ -162,6 +171,7 @@ public sealed class MedKitPlugin : BasePlugin
         var restoredHealth = HealTargetHealth - oldHealth;
         targetPawn.Health = HealTargetHealth;
         Utilities.SetStateChanged(targetPawn, "CBaseEntity", "m_iHealth");
+        SpawnHealParticles(targetPawn);
 
         SendMessage(player, Settings.HealerSuccessMessage,
             ("HEAL_AMOUNT", restoredHealth), ("OLD_HP", oldHealth), ("NEW_HP", HealTargetHealth));
@@ -169,6 +179,58 @@ public sealed class MedKitPlugin : BasePlugin
             ("HEAL_AMOUNT", restoredHealth), ("OLD_HP", oldHealth), ("NEW_HP", HealTargetHealth));
         Logger.LogInformation("MedKit: {Healer} healed {Target} from {OldHealth} to 100 HP.",
             player.PlayerName, target.PlayerName, oldHealth);
+    }
+
+    private void SpawnHealParticles(CCSPlayerPawn targetPawn)
+    {
+        if (!Settings.ParticleEnabled || !targetPawn.IsValid ||
+            string.IsNullOrWhiteSpace(Settings.ParticleEffect))
+            return;
+
+        try
+        {
+            var particle = Utilities.CreateEntityByName<CParticleSystem>("info_particle_system");
+            if (particle == null || !particle.IsValid)
+                return;
+
+            particle.EffectName = Settings.ParticleEffect;
+            particle.StartActive = true;
+            particle.Tint = Color.FromArgb(70, 255, 110);
+
+            var origin = targetPawn.AbsOrigin;
+            if (origin == null)
+            {
+                particle.Remove();
+                return;
+            }
+
+            particle.Teleport(
+                new Vector(origin.X, origin.Y, origin.Z + Settings.ParticleHeightOffset),
+                null,
+                null);
+            particle.DispatchSpawn();
+            particle.SetParent(targetPawn);
+
+            var duration = Math.Clamp(Settings.ParticleDurationSeconds, 0.1f, 30.0f);
+            var fadeOut = Math.Clamp(Settings.ParticleFadeOutSeconds, 0.1f, 10.0f);
+
+            AddTimer(duration, () =>
+            {
+                if (!particle.IsValid)
+                    return;
+
+                particle.AcceptInput("StopPlayEndCap");
+                AddTimer(fadeOut, () =>
+                {
+                    if (particle.IsValid)
+                        particle.Remove();
+                });
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning("MedKit: failed to create healing particles: {Error}", ex.Message);
+        }
     }
 
     // Returns true when the fifth teammate-use attempt occurs within 3 seconds.
@@ -194,7 +256,7 @@ public sealed class MedKitPlugin : BasePlugin
         return true;
     }
 
-    private static void ReturnHealthshot(CCSPlayerController player)
+    private void ReturnHealthshot(CCSPlayerController player)
     {
         // Restore the item when no valid teammate heal took place.
         var item = player.GiveNamedItem(HealthshotName);
@@ -241,6 +303,12 @@ public sealed class MedKitConfig : BasePluginConfig
     public int AntiSpamMaxAttempts { get; set; } = 5;
     public int AntiSpamWindowSeconds { get; set; } = 3;
     public int AntiSpamCooldownSeconds { get; set; } = 10;
+
+    public bool ParticleEnabled { get; set; } = true;
+    public string ParticleEffect { get; set; } = "particles/lightfountain/wonderinglights.vpcf";
+    public float ParticleDurationSeconds { get; set; } = 2.5f;
+    public float ParticleFadeOutSeconds { get; set; } = 1.5f;
+    public float ParticleHeightOffset { get; set; } = 8.0f;
 
     // Color tags: {WHITE}, {RED}, {GREEN}, {YELLOW}, {PURPLE}, {GREY}.
     // Placeholders: {HEAL_AMOUNT}, {OLD_HP}, {NEW_HP}, {COOLDOWN}.
