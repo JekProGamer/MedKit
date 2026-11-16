@@ -25,7 +25,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.7.0";
+    public override string ModuleVersion => "0.8.0";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -34,6 +34,8 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         AddCommand("css_medkit", "Give yourself a MedKit healthshot (admins only)", (player, _) => OnMedKitCommand(player));
         RegisterListener<Listeners.OnPlayerButtonsChanged>(OnPlayerButtonsChanged);
         RegisterListener<Listeners.OnServerPrecacheResources>(OnServerPrecacheResources);
+        RegisterEventHandler<EventItemPickup>(OnHealthshotPickup);
+        RegisterEventHandler<EventItemEquip>(OnHealthshotEquip);
 
         Logger.LogInformation("MedKit loaded. Team-heal input listener registered. Admin test command: !medkit");
     }
@@ -42,6 +44,30 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     {
         if (Settings.ParticleEnabled && !string.IsNullOrWhiteSpace(Settings.ParticleEffect))
             manifest.AddResource(Settings.ParticleEffect);
+    }
+
+    private HookResult OnHealthshotPickup(EventItemPickup gameEvent, GameEventInfo info)
+    {
+        var player = gameEvent.Userid;
+        if (player != null && player.IsValid && IsHealthshotItem(gameEvent.Item))
+            PrintMedKitHint(player);
+
+        return HookResult.Continue;
+    }
+
+    private HookResult OnHealthshotEquip(EventItemEquip gameEvent, GameEventInfo info)
+    {
+        var player = gameEvent.Userid;
+        if (player != null && player.IsValid && IsHealthshotItem(gameEvent.Item))
+            PrintMedKitHint(player);
+
+        return HookResult.Continue;
+    }
+
+    private static bool IsHealthshotItem(string item)
+    {
+        return !string.IsNullOrWhiteSpace(item) &&
+               item.Contains("healthshot", StringComparison.OrdinalIgnoreCase);
     }
 
     private void OnMedKitCommand(CCSPlayerController? player)
@@ -264,12 +290,18 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void ReturnHealthshot(CCSPlayerController player)
     {
-        // Restore the item when no valid teammate heal took place.
-        var item = player.GiveNamedItem(HealthshotName);
-        if (item == nint.Zero)
+        // Give the game a short moment to finish its native healthshot-use
+        // handling before restoring the item. Immediate GiveNamedItem can be
+        // consumed by the same input action on some server builds.
+        AddTimer(0.15f, () =>
         {
-            SendMessage(player, Settings.ReturnFailedMessage);
-        }
+            if (!player.IsValid || !player.PawnIsAlive)
+                return;
+
+            var item = player.GiveNamedItem(HealthshotName);
+            if (item == nint.Zero)
+                SendMessage(player, Settings.ReturnFailedMessage);
+        });
     }
 
     private void PrintSelfUseHint(CCSPlayerController player)
