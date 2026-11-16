@@ -12,7 +12,7 @@ public sealed class MedKitPlugin : BasePlugin
     private const float AimStartHeight = 64.0f;
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.2.0";
+    public override string ModuleVersion => "0.3.0";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -77,19 +77,27 @@ public sealed class MedKitPlugin : BasePlugin
 
         var start = pawn.AbsOrigin;
         if (start == null)
+        {
+            ReturnHealthshot(player);
             return;
+        }
 
         var eyePosition = new Vector(start.X, start.Y, start.Z + AimStartHeight);
         var trace = Trace.TraceShape(eyePosition, pawn.EyeAngles, pawn);
         if (!trace.DidHit())
         {
-            player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}Наведи прицел на раненого тиммейта.");
+            ReturnHealthshot(player);
+            PrintSelfUseHint(player);
             return;
         }
 
         var hitEntity = trace.HitEntity();
         if (hitEntity == null || !hitEntity.IsValid)
+        {
+            ReturnHealthshot(player);
+            PrintSelfUseHint(player);
             return;
+        }
 
         CCSPlayerPawn? targetPawn;
         try
@@ -98,23 +106,31 @@ public sealed class MedKitPlugin : BasePlugin
         }
         catch
         {
+            ReturnHealthshot(player);
+            PrintSelfUseHint(player);
             return;
         }
 
         if (targetPawn == null || !targetPawn.IsValid)
+        {
+            ReturnHealthshot(player);
+            PrintSelfUseHint(player);
             return;
+        }
 
         var target = targetPawn.Controller.Value;
         if (target == null || !target.IsValid || !target.PawnIsAlive ||
             target.Slot == player.Slot || target.Team != player.Team)
         {
-            player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}Аптечку можно использовать только на живом тиммейте.");
+            ReturnHealthshot(player);
+            PrintSelfUseHint(player);
             return;
         }
 
         var oldHealth = targetPawn.Health;
         if (oldHealth >= HealTargetHealth)
         {
+            ReturnHealthshot(player);
             player.PrintToChat($"{ChatColors.Yellow}[MedKit] {ChatColors.White}У тиммейта уже полное здоровье.");
             return;
         }
@@ -126,6 +142,22 @@ public sealed class MedKitPlugin : BasePlugin
         target.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Тебя вылечил тиммейт до {ChatColors.Green}100 HP{ChatColors.White}.");
         Logger.LogInformation("MedKit: {Healer} healed {Target} from {OldHealth} to 100 HP.",
             player.PlayerName, target.PlayerName, oldHealth);
+    }
+
+    private static void ReturnHealthshot(CCSPlayerController player)
+    {
+        // Restore the item when no valid teammate heal took place.
+        var item = player.GiveNamedItem(HealthshotName);
+        if (item == nint.Zero)
+        {
+            player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}Не удалось вернуть шприц.");
+        }
+    }
+
+    private static void PrintSelfUseHint(CCSPlayerController player)
+    {
+        player.PrintToChat(
+            $"{ChatColors.Red}[MedKit] {ChatColors.White}Нельзя использовать шприц на себе, лечи тиммейта.");
     }
 
     private static void PrintMedKitHint(CCSPlayerController player)
