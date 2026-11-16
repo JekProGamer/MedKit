@@ -345,8 +345,8 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
         var originalPawnHandle = originalPawn.EntityHandle.Raw;
 
-        // Wait until native healthshot-use handling has finished.
-        AddTimer(0.15f, () =>
+        // Wait until native healthshot-use handling and inventory updates have finished.
+        AddTimer(0.30f, () =>
         {
             _pendingHealthshotReturns.Remove(steamId);
 
