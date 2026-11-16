@@ -31,7 +31,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     public override void Load(bool hotReload)
     {
-        AddCommand("css_medkit", "Give yourself a MedKit healthshot (admins only)", OnMedKitCommand);
+        AddCommand("css_medkit", "Give yourself a MedKit healthshot (admins only)", (player, _) => OnMedKitCommand(player));
         RegisterListener<Listeners.OnPlayerButtonsChanged>(OnPlayerButtonsChanged);
         RegisterListener<Listeners.OnServerPrecacheResources>(OnServerPrecacheResources);
 
@@ -44,7 +44,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             manifest.AddResource(Settings.ParticleEffect);
     }
 
-    private void OnMedKitCommand(CCSPlayerController? player, CommandInfo command)
+    private void OnMedKitCommand(CCSPlayerController? player)
     {
         if (player == null || !player.IsValid)
             return;
