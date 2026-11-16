@@ -67,9 +67,8 @@ public sealed class MedKitPlugin : BasePlugin
             !string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
             return;
 
-        // Consume the healthshot before the game can run its native self-heal.
-        // The item is deliberately removed even if the crosshair is not on a teammate:
-        // a healthshot must never heal its owner.
+        // Remove the healthshot before the game can run its native self-heal.
+        // It is restored below unless a valid teammate is successfully healed.
         if (!player.RemoveItemByDesignerName(HealthshotName))
         {
             activeWeapon.Remove();
