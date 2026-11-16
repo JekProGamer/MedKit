@@ -24,9 +24,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
     private readonly Dictionary<ulong, (int Count, DateTime CooldownUntil)> _hintMessageLimits = new();
+    private readonly HashSet<ulong> _pendingHealthshotReturns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.1";
+    public override string ModuleVersion => "0.9.2";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -291,12 +292,43 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void ReturnHealthshot(CCSPlayerController player)
     {
-        // Give the game a short moment to finish its native healthshot-use
-        // handling before restoring the item. Immediate GiveNamedItem can be
-        // consumed by the same input action on some server builds.
+        if (!player.IsValid || !player.PawnIsAlive)
+            return;
+
+        var originalPawn = player.PlayerPawn.Value;
+        if (originalPawn == null || !originalPawn.IsValid)
+            return;
+
+        var steamId = player.SteamID;
+
+        // Several input callbacks can request a return before the timer fires.
+        // Keep only one pending return per player.
+        if (!_pendingHealthshotReturns.Add(steamId))
+            return;
+
+        var originalPawnHandle = originalPawn.EntityHandle.Raw;
+
+        // Wait until native healthshot-use handling has finished.
         AddTimer(0.15f, () =>
         {
+            _pendingHealthshotReturns.Remove(steamId);
+
             if (!player.IsValid || !player.PawnIsAlive)
+                return;
+
+            var currentPawn = player.PlayerPawn.Value;
+            if (currentPawn == null || !currentPawn.IsValid ||
+                currentPawn.EntityHandle.Raw != originalPawnHandle)
+                return;
+
+            // The game may already have restored/kept the healthshot.
+            // Never give another one if one is present in the inventory.
+            var hasHealthshot = currentPawn.WeaponServices?.MyWeapons.Any(weapon =>
+                weapon != null && weapon.IsValid &&
+                weapon.Value != null && weapon.Value.IsValid &&
+                string.Equals(weapon.Value.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase)) == true;
+
+            if (hasHealthshot)
                 return;
 
             var item = player.GiveNamedItem(HealthshotName);
