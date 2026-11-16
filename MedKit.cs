@@ -24,9 +24,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
     private readonly Dictionary<ulong, (int Count, DateTime CooldownUntil)> _hintMessageLimits = new();
+    private readonly Dictionary<ulong, CBasePlayerWeapon> _blockedHealthshots = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.7";
+    public override string ModuleVersion => "0.9.8";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -136,7 +137,21 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void OnPlayerButtonsChanged(CCSPlayerController player, PlayerButtons pressed, PlayerButtons released)
     {
-        if (!player.IsValid || !player.PawnIsAlive || (pressed & PlayerButtons.Attack) == 0)
+        if (!player.IsValid)
+            return;
+
+        // Unlock the healthshot only after primary attack is released.
+        // This prevents holding the button from triggering native self-healing.
+        if ((released & PlayerButtons.Attack) != 0 && _blockedHealthshots.Remove(player.SteamID, out var blockedWeapon))
+        {
+            if (blockedWeapon != null && blockedWeapon.IsValid)
+            {
+                blockedWeapon.NextPrimaryAttackTick = Server.TickCount;
+                blockedWeapon.NextPrimaryAttackTickRatio = 0.0f;
+            }
+        }
+
+        if (!player.PawnIsAlive || (pressed & PlayerButtons.Attack) == 0)
             return;
 
         var pawn = player.PlayerPawn.Value;
@@ -148,9 +163,12 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             !string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
             return;
 
-        // Cancel the primary attack in the server-side input state. Do not
-        // delete/recreate the item for invalid uses: the original healthshot
-        // remains in inventory and therefore cannot accumulate duplicates.
+        // Lock the weapon attack tick before native weapon processing. The lock
+        // remains until Attack is released, so holding the button cannot invoke
+        // the game's built-in self-heal. The item itself is not removed/recreated.
+        activeWeapon.NextPrimaryAttackTick = int.MaxValue;
+        activeWeapon.NextPrimaryAttackTickRatio = 0.0f;
+        _blockedHealthshots[player.SteamID] = activeWeapon;
         SuppressPrimaryAttack(pawn);
 
         if (_healCooldowns.TryGetValue(player.SteamID, out var cooldownUntil))
@@ -223,6 +241,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         }
 
         // Consume exactly the active healthshot only after a valid heal is confirmed.
+        _blockedHealthshots.Remove(player.SteamID);
         if (activeWeapon.IsValid)
             activeWeapon.Remove();
 
