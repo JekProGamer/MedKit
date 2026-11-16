@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.12";
+    public override string ModuleVersion => "0.9.13";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -354,13 +354,13 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     {
         var steamId = player.SteamID;
 
-        // Only one restore sequence may be pending per player.
+        // Only one delayed restore may be pending per player.
         if (!_pendingHealthshotRestoreChecks.Add(steamId))
             return;
 
-        // Restore after 0.1 seconds, then keep the inventory capped at one
-        // while delayed game-side item grants finish processing.
-        AddTimer(0.1f, () =>
+        // The blocked use consumes/removes the native item. Give one replacement
+        // after 5.5 seconds; no immediate restore or repeated inventory checks.
+        AddTimer(5.5f, () =>
         {
             try
             {
@@ -371,30 +371,14 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                 if (pawn == null || !pawn.IsValid)
                     return;
 
-                // The removed weapon can remain visible through a stale inventory handle
-                // for a short time. Always issue the replacement after 0.1 seconds;
-                // later checks remove any delayed duplicate and keep the cap at one.
                 var restoredItem = player.GiveNamedItem(HealthshotName);
                 if (restoredItem == nint.Zero)
                     Logger.LogWarning("MedKit: failed to restore blocked healthshot for {Player} ({SteamId}).",
                         player.PlayerName, steamId);
-
-                foreach (var delay in new[] { 0.25f, 0.75f, 1.5f, 3.0f, 5.0f })
-                {
-                    AddTimer(delay, () =>
-                    {
-                        if (!player.IsValid || !player.PawnIsAlive)
-                            return;
-
-                        var currentPawn = player.PlayerPawn.Value;
-                        if (currentPawn != null && currentPawn.IsValid)
-                            EnforceOneHealthshot(currentPawn);
-                    });
-                }
             }
             finally
             {
-                AddTimer(5.1f, () => _pendingHealthshotRestoreChecks.Remove(steamId));
+                _pendingHealthshotRestoreChecks.Remove(steamId);
             }
         });
     }
