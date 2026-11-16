@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotReturns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.4";
+    public override string ModuleVersion => "0.9.5";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -346,7 +346,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         var originalPawnHandle = originalPawn.EntityHandle.Raw;
 
         // Wait until native healthshot-use handling and inventory updates have finished.
-        AddTimer(0.30f, () =>
+        AddTimer(2.5f, () =>
         {
             _pendingHealthshotReturns.Remove(steamId);
 
