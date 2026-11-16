@@ -2,7 +2,7 @@
 
 CounterStrikeSharp plugin for CS2 Deathmatch.
 
-## Current draft: 0.7.0
+## Current draft: 0.8.0
 
 Implemented in source:
 - `!medkit` test command (registered as `css_medkit`).
@@ -11,6 +11,8 @@ Implemented in source:
 - Listens for the primary-attack button while the healthshot is active.
 - Removes the healthshot before native use is allowed to proceed, preventing the owner's standard self-heal.
 - Traces the player's aim and heals a living same-team player hit by the trace to 100 HP.
+- Prints the colored Russian instruction when the healthshot is picked up and whenever it is equipped in hand.
+- Restores the healthshot after an invalid/self-use attempt with a short delay, so the same native input does not immediately consume the returned item.
 - Prints the colored Russian instruction and healing feedback.
 - Spawns a green-tinted built-in CS2 particle effect on the healed teammate; the effect is attached to the player, stopped after a configurable duration, and then removed after its fade-out window.
 
@@ -43,7 +45,7 @@ After editing the JSON, reload the plugin or restart the server to apply changes
 
 ## Validation status
 
-The source implementation has been added, but it has **not yet been compiled or tested on a live CS2 server**. In particular, verify that the button-change listener runs early enough on the server build to remove the healthshot before the native weapon action. If the game processes the healthshot first, a lower-level pre-hook will be required.
+The source implementation has been added, but it has **not yet been compiled or tested on a live CS2 server**. The pickup/equip event handlers and delayed healthshot restoration have not yet been compiled or tested on a live CS2 server. Verify that the server emits `item_pickup` and `item_equip` with the healthshot item name, and that the button-change listener blocks native self-heal on the target server build.
 
 ## Requirements
 
