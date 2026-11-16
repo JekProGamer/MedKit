@@ -42,7 +42,7 @@ public sealed class MedKitPlugin : BasePlugin
         }
 
         var item = player.GiveNamedItem(HealthshotName);
-        if (item == null || !item.IsValid)
+        if (item == nint.Zero)
         {
             player.PrintToChat($"{ChatColors.Red}[MedKit] {ChatColors.White}Не удалось выдать аптечку.");
             return;
