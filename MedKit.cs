@@ -165,8 +165,14 @@ public sealed class MedKitPlugin : BasePlugin
         targetPawn.Health = HealTargetHealth;
         Utilities.SetStateChanged(targetPawn, "CBaseEntity", "m_iHealth");
 
-        player.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Ты восстановил тиммейту {ChatColors.Green}{restoredHealth} HP {ChatColors.White}({oldHealth} -> {ChatColors.Green}100 HP{ChatColors.White}).");
-        target.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Тебе восстановили {ChatColors.Green}{restoredHealth} HP {ChatColors.White}(теперь {ChatColors.Green}100 HP{ChatColors.White}).");
+        player.PrintToChat(
+            $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] " +
+            $"{ChatColors.White}Ты восстановил тиммейту {ChatColors.Yellow}{restoredHealth} HP " +
+            $"{ChatColors.Grey}({ChatColors.Yellow}{oldHealth}{ChatColors.Grey} -> {ChatColors.Green}100 HP{ChatColors.Grey}).");
+        target.PrintToChat(
+            $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] " +
+            $"{ChatColors.White}Тебе восстановили {ChatColors.Yellow}{restoredHealth} HP " +
+            $"{ChatColors.Grey}(теперь {ChatColors.Green}100 HP{ChatColors.Grey}).");
         Logger.LogInformation("MedKit: {Healer} healed {Target} from {OldHealth} to 100 HP.",
             player.PlayerName, target.PlayerName, oldHealth);
     }
