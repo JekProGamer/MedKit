@@ -10,9 +10,14 @@ public sealed class MedKitPlugin : BasePlugin
     private const string HealthshotName = "weapon_healthshot";
     private const int HealTargetHealth = 100;
     private const float AimStartHeight = 64.0f;
+    private static readonly TimeSpan AntiSpamWindow = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan AntiSpamCooldown = TimeSpan.FromSeconds(10);
+
+    private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
+    private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.4.0";
+    public override string ModuleVersion => "0.5.0";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -74,6 +79,19 @@ public sealed class MedKitPlugin : BasePlugin
             activeWeapon.Remove();
         }
 
+        // During cooldown, consume the click without allowing the game's native self-heal.
+        if (_healCooldowns.TryGetValue(player.SteamID, out var cooldownUntil))
+        {
+            if (DateTime.UtcNow < cooldownUntil)
+            {
+                ReturnHealthshot(player);
+                return;
+            }
+
+            _healCooldowns.Remove(player.SteamID);
+            _healAttempts.Remove(player.SteamID);
+        }
+
         var start = pawn.AbsOrigin;
         if (start == null)
         {
@@ -126,6 +144,15 @@ public sealed class MedKitPlugin : BasePlugin
             return;
         }
 
+        if (RegisterHealAttempt(player))
+        {
+            ReturnHealthshot(player);
+            player.PrintToChat(
+                $"{ChatColors.White}[{ChatColors.Purple}MedKit{ChatColors.White}] " +
+                $"{ChatColors.Red}Антиспам! {ChatColors.White}Лечение заблокировано на {ChatColors.Yellow}10 секунд{ChatColors.White}.");
+            return;
+        }
+
         var oldHealth = targetPawn.Health;
         if (oldHealth >= HealTargetHealth)
         {
@@ -142,6 +169,29 @@ public sealed class MedKitPlugin : BasePlugin
         target.PrintToChat($"{ChatColors.Green}[MedKit] {ChatColors.White}Тебе восстановили {ChatColors.Green}{restoredHealth} HP {ChatColors.White}(теперь {ChatColors.Green}100 HP{ChatColors.White}).");
         Logger.LogInformation("MedKit: {Healer} healed {Target} from {OldHealth} to 100 HP.",
             player.PlayerName, target.PlayerName, oldHealth);
+    }
+
+    // Returns true when the fifth teammate-use attempt occurs within 3 seconds.
+    private bool RegisterHealAttempt(CCSPlayerController player)
+    {
+        var now = DateTime.UtcNow;
+        var steamId = player.SteamID;
+
+        if (!_healAttempts.TryGetValue(steamId, out var attempts))
+        {
+            attempts = new List<DateTime>();
+            _healAttempts[steamId] = attempts;
+        }
+
+        attempts.RemoveAll(time => now - time > AntiSpamWindow);
+        attempts.Add(now);
+
+        if (attempts.Count < 5)
+            return false;
+
+        _healAttempts.Remove(steamId);
+        _healCooldowns[steamId] = now + AntiSpamCooldown;
+        return true;
     }
 
     private static void ReturnHealthshot(CCSPlayerController player)
