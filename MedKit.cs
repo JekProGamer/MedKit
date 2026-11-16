@@ -24,9 +24,10 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly Dictionary<ulong, List<DateTime>> _healAttempts = new();
     private readonly Dictionary<ulong, DateTime> _healCooldowns = new();
     private readonly Dictionary<ulong, (int Count, DateTime CooldownUntil)> _hintMessageLimits = new();
+    private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.9";
+    public override string ModuleVersion => "0.9.10";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -327,16 +328,54 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void RestoreHealthshotAfterBlockedUse(CCSPlayerController player)
     {
-        AddTimer(0.1f, () =>
+        var steamId = player.SteamID;
+
+        // Only one restore sequence may be pending per player.
+        if (!_pendingHealthshotRestoreChecks.Add(steamId))
+            return;
+
+        // First check after 2 seconds. If the game has already restored the
+        // healthshot, do nothing. Otherwise, wait another 3 seconds before
+        // giving exactly one replacement.
+        AddTimer(2.0f, () =>
         {
             if (!player.IsValid || !player.PawnIsAlive)
+            {
+                _pendingHealthshotRestoreChecks.Remove(steamId);
                 return;
+            }
 
             var pawn = player.PlayerPawn.Value;
-            if (pawn == null || !pawn.IsValid || HasHealthshot(pawn))
+            if (pawn == null || !pawn.IsValid)
+            {
+                _pendingHealthshotRestoreChecks.Remove(steamId);
                 return;
+            }
 
-            player.GiveNamedItem(HealthshotName);
+            if (HasHealthshot(pawn))
+            {
+                _pendingHealthshotRestoreChecks.Remove(steamId);
+                return;
+            }
+
+            AddTimer(3.0f, () =>
+            {
+                try
+                {
+                    if (!player.IsValid || !player.PawnIsAlive)
+                        return;
+
+                    var currentPawn = player.PlayerPawn.Value;
+                    if (currentPawn == null || !currentPawn.IsValid || HasHealthshot(currentPawn))
+                        return;
+
+                    player.GiveNamedItem(HealthshotName);
+                }
+                finally
+                {
+                    _pendingHealthshotRestoreChecks.Remove(steamId);
+                }
+            });
         });
     }
 
