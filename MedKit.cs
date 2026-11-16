@@ -289,12 +289,12 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             message = message.Replace("{" + key + "}", value.ToString() ?? string.Empty);
 
         message = message
-            .Replace("{WHITE}", ChatColors.White)
-            .Replace("{RED}", ChatColors.Red)
-            .Replace("{GREEN}", ChatColors.Green)
-            .Replace("{YELLOW}", ChatColors.Yellow)
-            .Replace("{PURPLE}", ChatColors.Purple)
-            .Replace("{GREY}", ChatColors.Grey);
+            .Replace("{WHITE}", ChatColors.White.ToString())
+            .Replace("{RED}", ChatColors.Red.ToString())
+            .Replace("{GREEN}", ChatColors.Green.ToString())
+            .Replace("{YELLOW}", ChatColors.Yellow.ToString())
+            .Replace("{PURPLE}", ChatColors.Purple.ToString())
+            .Replace("{GREY}", ChatColors.Grey.ToString());
 
         player.PrintToChat(message);
     }
