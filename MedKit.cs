@@ -328,7 +328,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             return;
 
         var healthshots = new List<CBasePlayerWeapon>();
-        var seenHandles = new HashSet<nint>();
+        var seenHandles = new HashSet<uint>();
 
         var weapons = pawn.WeaponServices?.MyWeapons;
         if (weapons != null)
