@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotReturns = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.3";
+    public override string ModuleVersion => "0.9.4";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -76,6 +76,13 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     {
         if (!pawn.IsValid)
             return false;
+
+        // Check the active weapon separately as the inventory handle list can
+        // briefly lag behind weapon switching/removal on the server.
+        var activeWeapon = pawn.WeaponServices?.ActiveWeapon.Value;
+        if (activeWeapon != null && activeWeapon.IsValid &&
+            string.Equals(activeWeapon.DesignerName, HealthshotName, StringComparison.OrdinalIgnoreCase))
+            return true;
 
         var weapons = pawn.WeaponServices?.MyWeapons;
         if (weapons == null)
@@ -144,10 +151,13 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
         // Remove the healthshot before the game can run its native self-heal.
         // It is restored below unless a valid teammate is successfully healed.
-        if (!player.RemoveItemByDesignerName(HealthshotName))
-        {
+        player.RemoveItemByDesignerName(HealthshotName);
+
+        // Always remove the actual active entity as well. RemoveItemByDesignerName
+        // can update the inventory before the entity is fully removed; leaving it
+        // alive lets the native healthshot handler retain it while we issue a return.
+        if (activeWeapon.IsValid)
             activeWeapon.Remove();
-        }
 
         // During cooldown, consume the click without allowing the game's native self-heal.
         if (_healCooldowns.TryGetValue(player.SteamID, out var cooldownUntil))
