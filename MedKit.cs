@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.13";
+    public override string ModuleVersion => "0.9.14";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -369,6 +369,11 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
                 var pawn = player.PlayerPawn.Value;
                 if (pawn == null || !pawn.IsValid)
+                    return;
+
+                // The original healthshot may still be present if the game did not consume it.
+                // Never grant a replacement when the player already has one.
+                if (HasHealthshot(pawn))
                     return;
 
                 var restoredItem = player.GiveNamedItem(HealthshotName);
