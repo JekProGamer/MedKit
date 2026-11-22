@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.17";
+    public override string ModuleVersion => "0.9.18";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -406,12 +406,18 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void ScheduleHealthshotLimit(CCSPlayerController player)
     {
-        // CS2 may finish adding/updating weapon entities over several ticks.
-        // Re-check the full inventory to prevent delayed duplicate healthshots.
+        // CS2 can update the weapon inventory after a noticeable delay.
+        // Keep cleanup-only checks running long enough to catch a late native
+        // restoration that arrives after MedKit has granted a replacement.
         EnforceHealthshotLimitAfterDelay(player, 0.1f);
         EnforceHealthshotLimitAfterDelay(player, 0.5f);
         EnforceHealthshotLimitAfterDelay(player, 1.0f);
         EnforceHealthshotLimitAfterDelay(player, 2.0f);
+        EnforceHealthshotLimitAfterDelay(player, 4.0f);
+        EnforceHealthshotLimitAfterDelay(player, 6.0f);
+        EnforceHealthshotLimitAfterDelay(player, 8.0f);
+        EnforceHealthshotLimitAfterDelay(player, 10.0f);
+        EnforceHealthshotLimitAfterDelay(player, 15.0f);
     }
 
     private void EnforceHealthshotLimitAfterDelay(CCSPlayerController player, float delay)
