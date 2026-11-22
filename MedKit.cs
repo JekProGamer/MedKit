@@ -378,8 +378,16 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
                 var restoredItem = player.GiveNamedItem(HealthshotName);
                 if (restoredItem == nint.Zero)
+                {
+                    SendMessage(player, Settings.ReturnFailedMessage);
                     Logger.LogWarning("MedKit: failed to restore blocked healthshot for {Player} ({SteamId}).",
                         player.PlayerName, steamId);
+                    return;
+                }
+
+                // GiveNamedItem and the inventory replication can complete on different
+                // ticks. Re-scan after the item has settled and remove any duplicate.
+                ScheduleHealthshotLimit(player);
             }
             finally
             {
