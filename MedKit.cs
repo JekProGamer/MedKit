@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.14";
+    public override string ModuleVersion => "0.9.15";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -359,10 +359,12 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
         if (!_pendingHealthshotRestoreChecks.Add(steamId))
             return;
 
-        // The blocked use consumes/removes the native item. Give one replacement
-        // after 5.5 seconds; no immediate restore or repeated inventory checks.
+        // Keep the per-player restore lock until inventory replication and all
+        // normalization checks have completed. Releasing it immediately after GiveNamedItem
+        // allowed another blocked-use callback to start a second delayed grant.
         AddTimer(5.5f, () =>
         {
+            var releaseLockAfterChecks = false;
             try
             {
                 if (!player.IsValid || !player.PawnIsAlive)
@@ -386,17 +388,20 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                     return;
                 }
 
-                // Inventory replication is not immediate. Normalize the inventory on
-                // several subsequent ticks so late native weapon updates cannot leave
-                // an extra healthshot behind.
+                // One normalization sequence is enough. It checks after the native
+                // inventory update settles and removes any duplicate healthshots.
                 ScheduleHealthshotLimit(player);
-                AddTimer(0.5f, () => ScheduleHealthshotLimit(player));
-                AddTimer(1.0f, () => ScheduleHealthshotLimit(player));
-                AddTimer(2.0f, () => ScheduleHealthshotLimit(player));
+
+                // ScheduleHealthshotLimit's last check runs at 2.0 seconds.
+                // Keep the lock slightly longer so another restore cannot overlap it.
+                releaseLockAfterChecks = true;
+                AddTimer(2.25f, () => _pendingHealthshotRestoreChecks.Remove(steamId));
             }
             finally
             {
-                _pendingHealthshotRestoreChecks.Remove(steamId);
+                // Early exits must not leave the player permanently locked.
+                if (!releaseLockAfterChecks)
+                    _pendingHealthshotRestoreChecks.Remove(steamId);
             }
         });
     }
