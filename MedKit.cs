@@ -154,6 +154,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
             return;
         }
 
+        ScheduleHealthshotLimit(player);
         PrintMedKitHint(player);
         Logger.LogInformation("MedKit: admin {Player} ({SteamId}) received a test healthshot.",
             player.PlayerName, player.SteamID);
@@ -402,7 +403,17 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
     private void ScheduleHealthshotLimit(CCSPlayerController player)
     {
-        AddTimer(0.1f, () =>
+        // CS2 may finish adding/updating weapon entities over several ticks.
+        // Re-check the full inventory to prevent delayed duplicate healthshots.
+        EnforceHealthshotLimitAfterDelay(player, 0.1f);
+        EnforceHealthshotLimitAfterDelay(player, 0.5f);
+        EnforceHealthshotLimitAfterDelay(player, 1.0f);
+        EnforceHealthshotLimitAfterDelay(player, 2.0f);
+    }
+
+    private void EnforceHealthshotLimitAfterDelay(CCSPlayerController player, float delay)
+    {
+        AddTimer(delay, () =>
         {
             if (!player.IsValid || !player.PawnIsAlive)
                 return;
