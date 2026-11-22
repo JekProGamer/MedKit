@@ -385,9 +385,13 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                     return;
                 }
 
-                // GiveNamedItem and the inventory replication can complete on different
-                // ticks. Re-scan after the item has settled and remove any duplicate.
+                // Inventory replication is not immediate. Normalize the inventory on
+                // several subsequent ticks so late native weapon updates cannot leave
+                // an extra healthshot behind.
                 ScheduleHealthshotLimit(player);
+                AddTimer(0.5f, () => ScheduleHealthshotLimit(player));
+                AddTimer(1.0f, () => ScheduleHealthshotLimit(player));
+                AddTimer(2.0f, () => ScheduleHealthshotLimit(player));
             }
             finally
             {
