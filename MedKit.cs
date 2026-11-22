@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.15";
+    public override string ModuleVersion => "0.9.16";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -355,13 +355,12 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     {
         var steamId = player.SteamID;
 
-        // Only one delayed restore may be pending per player.
+        // The game owns healthshot restoration after a blocked/self-use attempt.
+        // MedKit must not issue a second item; it only normalizes duplicates
+        // after the native inventory update has settled.
         if (!_pendingHealthshotRestoreChecks.Add(steamId))
             return;
 
-        // Keep the per-player restore lock until inventory replication and all
-        // normalization checks have completed. Releasing it immediately after GiveNamedItem
-        // allowed another blocked-use callback to start a second delayed grant.
         AddTimer(5.5f, () =>
         {
             var releaseLockAfterChecks = false;
@@ -374,32 +373,20 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                 if (pawn == null || !pawn.IsValid)
                     return;
 
-                // The original healthshot may still be present if the game did not consume it.
-                // Never grant a replacement when the player already has one.
-                if (HasHealthshot(pawn))
-                    return;
-
-                var restoredItem = player.GiveNamedItem(HealthshotName);
-                if (restoredItem == nint.Zero)
+                if (!HasHealthshot(pawn))
                 {
-                    SendMessage(player, Settings.ReturnFailedMessage);
-                    Logger.LogWarning("MedKit: failed to restore blocked healthshot for {Player} ({SteamId}).",
+                    Logger.LogWarning(
+                        "MedKit: no healthshot was found after native restoration for {Player} ({SteamId}); no replacement was granted to avoid duplicate issuance.",
                         player.PlayerName, steamId);
-                    return;
                 }
 
-                // One normalization sequence is enough. It checks after the native
-                // inventory update settles and removes any duplicate healthshots.
+                // Only remove extras. This method never creates/grants a healthshot.
                 ScheduleHealthshotLimit(player);
-
-                // ScheduleHealthshotLimit's last check runs at 2.0 seconds.
-                // Keep the lock slightly longer so another restore cannot overlap it.
                 AddTimer(2.25f, () => _pendingHealthshotRestoreChecks.Remove(steamId));
                 releaseLockAfterChecks = true;
             }
             finally
             {
-                // Early exits must not leave the player permanently locked.
                 if (!releaseLockAfterChecks)
                     _pendingHealthshotRestoreChecks.Remove(steamId);
             }
