@@ -27,7 +27,7 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     private readonly HashSet<ulong> _pendingHealthshotRestoreChecks = new();
 
     public override string ModuleName => "MedKit";
-    public override string ModuleVersion => "0.9.16";
+    public override string ModuleVersion => "0.9.17";
     public override string ModuleAuthor => "RezTop";
     public override string ModuleDescription => "Team-only healthshot medkit for Deathmatch";
 
@@ -355,9 +355,8 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
     {
         var steamId = player.SteamID;
 
-        // The game owns healthshot restoration after a blocked/self-use attempt.
-        // MedKit must not issue a second item; it only normalizes duplicates
-        // after the native inventory update has settled.
+        // One pending restore per player. Pickup/equip handlers only clean up
+        // duplicates and never issue another healthshot.
         if (!_pendingHealthshotRestoreChecks.Add(steamId))
             return;
 
@@ -373,14 +372,26 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
                 if (pawn == null || !pawn.IsValid)
                     return;
 
+                // The native game may or may not have restored the removed item.
+                // Grant exactly one replacement only when the inventory is empty.
                 if (!HasHealthshot(pawn))
                 {
-                    Logger.LogWarning(
-                        "MedKit: no healthshot was found after native restoration for {Player} ({SteamId}); no replacement was granted to avoid duplicate issuance.",
-                        player.PlayerName, steamId);
+                    var item = player.GiveNamedItem(HealthshotName);
+                    if (item == nint.Zero)
+                    {
+                        Logger.LogWarning(
+                            "MedKit: failed to restore healthshot for {Player} ({SteamId}).",
+                            player.PlayerName, steamId);
+                    }
+                    else
+                    {
+                        Logger.LogInformation(
+                            "MedKit: restored one healthshot for {Player} ({SteamId}) after blocked use.",
+                            player.PlayerName, steamId);
+                    }
                 }
 
-                // Only remove extras. This method never creates/grants a healthshot.
+                // Cleanup checks only remove extras; they never grant items.
                 ScheduleHealthshotLimit(player);
                 AddTimer(2.25f, () => _pendingHealthshotRestoreChecks.Remove(steamId));
                 releaseLockAfterChecks = true;
