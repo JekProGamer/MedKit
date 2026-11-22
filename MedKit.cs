@@ -394,8 +394,8 @@ public sealed class MedKitPlugin : BasePlugin, IPluginConfig<MedKitConfig>
 
                 // ScheduleHealthshotLimit's last check runs at 2.0 seconds.
                 // Keep the lock slightly longer so another restore cannot overlap it.
-                releaseLockAfterChecks = true;
                 AddTimer(2.25f, () => _pendingHealthshotRestoreChecks.Remove(steamId));
+                releaseLockAfterChecks = true;
             }
             finally
             {
